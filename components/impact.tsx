@@ -67,7 +67,7 @@ export function Impact() {
               ))}
             </ul>
             <a
-              href="mailto:hello@dorodango.fashion"
+              href="#get-involved"
               className="mt-4 w-fit rounded-full bg-accent px-8 py-3 text-sm font-medium text-accent-foreground transition-opacity hover:opacity-90"
             >
               Partner With Us
