@@ -1,5 +1,7 @@
 import type { Metadata } from 'next'
 import { DM_Serif_Display, Inter } from 'next/font/google'
+import { AuthProvider } from '@/components/auth-provider'
+import { CartProvider } from '@/components/cart-provider'
 
 import './globals.css'
 
@@ -18,7 +20,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} ${dmSerif.variable} font-sans antialiased`}>{children}</body>
+      <body className={`${inter.variable} ${dmSerif.variable} font-sans antialiased`}>
+        <AuthProvider>
+          <CartProvider>
+            {children}
+          </CartProvider>
+        </AuthProvider>
+      </body>
     </html>
   )
 }
