@@ -12,7 +12,9 @@ import {
   collection, 
   doc, 
   setDoc, 
-  getDoc, 
+  getDoc,
+  addDoc,
+  serverTimestamp,
   enableIndexedDbPersistence,
   initializeFirestore,
   CACHE_SIZE_UNLIMITED

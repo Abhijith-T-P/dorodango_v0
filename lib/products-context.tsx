@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
 import { db } from "./firebase"
-import { collection, getDocs, doc, setDoc, deleteDoc, query, where } from "firebase/firestore"
+import { collection, getDocs, doc, setDoc, deleteDoc, addDoc, serverTimestamp } from "firebase/firestore"
 
 export type Product = {
   id: string
@@ -12,6 +12,7 @@ export type Product = {
   image: string
   tag: string | null
   description: string
+  createdAt?: Date
 }
 
 type ProductsContextType = {
@@ -20,15 +21,16 @@ type ProductsContextType = {
   removeProduct: (id: string) => void
   loading: boolean
   syncFromFirestore: () => Promise<void>
+  migrateProducts: () => Promise<{ success: boolean; message: string; count?: number; error?: string }>
 }
 
 const ProductsContext = createContext<ProductsContextType | null>(null)
 
 const STORAGE_KEY = "dorodango-products"
+const MIGRATION_KEY = "dorodango-migration-complete"
 
-const defaultProducts: Product[] = [
+const defaultProducts: Omit<Product, "id">[] = [
   {
-    id: "1",
     name: "Embroidered Denim Jacket",
     artisan: "Meera Devi",
     price: 2499,
@@ -37,7 +39,6 @@ const defaultProducts: Product[] = [
     description: "Hand-embroidered floral motifs on upcycled denim. One of a kind.",
   },
   {
-    id: "2",
     name: "Botanical Canvas Tote",
     artisan: "Priya Sharma",
     price: 899,
@@ -46,7 +47,6 @@ const defaultProducts: Product[] = [
     description: "Hand-painted botanical art on repurposed canvas. Carry your story.",
   },
   {
-    id: "3",
     name: "Patchwork Quilted Vest",
     artisan: "Fatima Begum",
     price: 1899,
@@ -55,7 +55,6 @@ const defaultProducts: Product[] = [
     description: "Vintage fabric scraps stitched into a warm, wearable mosaic.",
   },
   {
-    id: "4",
     name: "Embroidered Jeans",
     artisan: "Lakshmi Iyer",
     price: 1999,
@@ -64,7 +63,6 @@ const defaultProducts: Product[] = [
     description: "Floral and butterfly embroidery breathing new life into classic denim.",
   },
   {
-    id: "5",
     name: "Silk Beaded Headband",
     artisan: "Anjali Patel",
     price: 599,
@@ -73,7 +71,6 @@ const defaultProducts: Product[] = [
     description: "Repurposed vintage silk with hand-stitched beadwork detailing.",
   },
   {
-    id: "6",
     name: "Block-Printed Cotton Tee",
     artisan: "Ravi Kumar",
     price: 1299,
@@ -88,6 +85,67 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   const [mounted, setMounted] = useState(false)
   const [loading, setLoading] = useState(true)
 
+  // Migrate products to Firestore (automatic on first run)
+  async function migrateProducts(): Promise<{ success: boolean; message: string; count?: number; error?: string }> {
+    try {
+      const productsRef = collection(db, 'products')
+      
+      // Check if products already exist in Firestore
+      const snapshot = await getDocs(productsRef)
+      
+      if (!snapshot.empty) {
+        // Products already migrated
+        return { 
+          success: true, 
+          message: "Products already exist in Firestore",
+          count: snapshot.size
+        }
+      }
+
+      // Migrate each product to Firestore
+      let migratedCount = 0
+      const errors: string[] = []
+
+      for (const product of defaultProducts) {
+        try {
+          const docRef = await addDoc(productsRef, {
+            ...product,
+            createdAt: serverTimestamp()
+          })
+          console.log(`Migrated product: ${product.name} with ID: ${docRef.id}`)
+          migratedCount++
+        } catch (productError: any) {
+          errors.push(`Failed to migrate ${product.name}: ${productError.message}`)
+          console.error(`Failed to migrate product: ${product.name}`, productError)
+        }
+      }
+
+      if (migratedCount === defaultProducts.length) {
+        // Mark migration as complete
+        localStorage.setItem(MIGRATION_KEY, 'true')
+        return { 
+          success: true, 
+          message: `Successfully migrated ${migratedCount} products to Firestore`,
+          count: migratedCount
+        }
+      } else {
+        return { 
+          success: false, 
+          message: `Partially migrated ${migratedCount}/${defaultProducts.length} products`,
+          count: migratedCount,
+          error: errors.join('; ')
+        }
+      }
+    } catch (error: any) {
+      console.error("Migration failed:", error)
+      return { 
+        success: false, 
+        message: "Migration failed",
+        error: error.message 
+      }
+    }
+  }
+
   // Initialize from localStorage cache (cache-first strategy)
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY)
@@ -95,21 +153,35 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       try {
         setProducts(JSON.parse(stored))
       } catch {
-        setProducts(defaultProducts)
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultProducts))
+        setProducts(defaultProducts.map((p, i) => ({ ...p, id: String(i + 1) })))
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultProducts.map((p, i) => ({ ...p, id: String(i + 1) }))))
       }
     } else {
-      setProducts(defaultProducts)
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultProducts))
+      setProducts(defaultProducts.map((p, i) => ({ ...p, id: String(i + 1) })))
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultProducts.map((p, i) => ({ ...p, id: String(i + 1) }))))
     }
     setMounted(true)
     setLoading(false)
   }, [])
 
   // Sync with Firestore in background (after initial render)
+  // Also trigger automatic migration if not yet done
   useEffect(() => {
     if (mounted && !loading) {
-      syncFromFirestore()
+      // Check if migration has been completed
+      const migrationComplete = localStorage.getItem(MIGRATION_KEY) === 'true'
+      
+      if (!migrationComplete) {
+        // Run migration automatically
+        migrateProducts().then((result) => {
+          console.log("Migration result:", result)
+          // After migration, sync from Firestore
+          syncFromFirestore()
+        })
+      } else {
+        // Already migrated, just sync
+        syncFromFirestore()
+      }
     }
   }, [mounted, loading])
 
@@ -120,10 +192,20 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       const snapshot = await getDocs(productsRef)
       
       if (!snapshot.empty) {
-        const firestoreProducts: Product[] = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as Product[]
+        const firestoreProducts: Product[] = snapshot.docs.map(doc => {
+          const data = doc.data()
+          // Handle Firestore timestamp conversion
+          return {
+            id: doc.id,
+            name: data.name as string,
+            artisan: data.artisan as string,
+            price: data.price as number,
+            image: data.image as string,
+            tag: data.tag as string | null,
+            description: data.description as string,
+            createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : undefined
+          }
+        })
         
         // Merge: prefer localStorage data, but sync new products from Firestore
         const localIds = new Set(products.map(p => p.id))
@@ -133,6 +215,10 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
           const merged = [...products, ...newFromFirestore]
           setProducts(merged)
           localStorage.setItem(STORAGE_KEY, JSON.stringify(merged))
+        } else if (products.length === 0) {
+          // If no local products, use Firestore products
+          setProducts(firestoreProducts)
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(firestoreProducts))
         }
       }
     } catch (error) {
@@ -159,6 +245,16 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   function addProduct(product: Omit<Product, "id">) {
     const newProduct: Product = { ...product, id: crypto.randomUUID() }
     persist([newProduct, ...products])
+    
+    // Also add to Firestore with new ID
+    try {
+      addDoc(collection(db, 'products'), {
+        ...product,
+        createdAt: serverTimestamp()
+      })
+    } catch (error) {
+      console.warn('Failed to add to Firestore:', error)
+    }
   }
 
   function removeProduct(id: string) {
@@ -175,7 +271,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   if (!mounted) return null
 
   return (
-    <ProductsContext.Provider value={{ products, addProduct, removeProduct, loading, syncFromFirestore }}>
+    <ProductsContext.Provider value={{ products, addProduct, removeProduct, loading, syncFromFirestore, migrateProducts }}>
       {children}
     </ProductsContext.Provider>
   )
