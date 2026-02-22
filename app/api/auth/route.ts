@@ -55,9 +55,10 @@ export async function POST(req: NextRequest) {
       email 
     }), {
       httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
       path: "/",
       maxAge: 60 * 60 * 24 * 7, // 7 days
-      sameSite: "lax",
+      sameSite: "strict",
     })
 
     return NextResponse.json({ 
@@ -96,9 +97,10 @@ export async function POST(req: NextRequest) {
       email 
     }), {
       httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
       path: "/",
       maxAge: 60 * 60 * 24 * 7, // 7 days
-      sameSite: "lax",
+      sameSite: "strict",
     })
 
     return NextResponse.json({ 
