@@ -1,8 +1,21 @@
 import { NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
+import { firebaseAuth, userProfile } from "@/lib/firebase"
 
-// In-memory user store (reset on redeploy — fine for a small demo)
-const users: Map<string, { name: string; email: string; password: string }> = new Map()
+// Helper to get auth token from header or cookie
+async function getCurrentUserFromSession() {
+  const jar = await cookies()
+  const session = jar.get("session")
+  if (!session?.value) {
+    return null
+  }
+  try {
+    const userData = JSON.parse(session.value)
+    return userData
+  } catch {
+    return null
+  }
+}
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
@@ -12,41 +25,99 @@ export async function POST(req: NextRequest) {
     if (!email || !password || !name) {
       return NextResponse.json({ error: "All fields are required" }, { status: 400 })
     }
-    if (users.has(email)) {
-      return NextResponse.json({ error: "Account already exists" }, { status: 409 })
+
+    // Register with Firebase Auth
+    const result = await firebaseAuth.register(email, password)
+    
+    if (result.error) {
+      // Handle specific Firebase auth errors
+      if (result.error.includes("email-already-in-use")) {
+        return NextResponse.json({ error: "Account already exists" }, { status: 409 })
+      }
+      return NextResponse.json({ error: result.error }, { status: 400 })
     }
-    users.set(email, { name, email, password })
+
+    // Save user profile to Firestore
+    const profileResult = await userProfile.setProfile(result.user!.uid, {
+      name,
+      email
+    })
+
+    if (profileResult.error) {
+      console.error("Error saving user profile:", profileResult.error)
+    }
+
+    // Set session cookie
     const jar = await cookies()
-    jar.set("session", JSON.stringify({ name, email }), {
+    jar.set("session", JSON.stringify({ 
+      uid: result.user!.uid,
+      name, 
+      email 
+    }), {
       httpOnly: true,
       path: "/",
-      maxAge: 60 * 60 * 24 * 7,
+      maxAge: 60 * 60 * 24 * 7, // 7 days
       sameSite: "lax",
     })
-    return NextResponse.json({ user: { name, email } })
+
+    return NextResponse.json({ 
+      user: { 
+        uid: result.user!.uid,
+        name, 
+        email 
+      } 
+    })
   }
 
   if (action === "login") {
     if (!email || !password) {
       return NextResponse.json({ error: "Email and password are required" }, { status: 400 })
     }
-    const user = users.get(email)
-    if (!user || user.password !== password) {
-      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 })
+
+    // Sign in with Firebase Auth
+    const result = await firebaseAuth.login(email, password)
+    
+    if (result.error) {
+      if (result.error.includes("invalid-credential") || result.error.includes("wrong-password") || result.error.includes("user-not-found")) {
+        return NextResponse.json({ error: "Invalid credentials" }, { status: 401 })
+      }
+      return NextResponse.json({ error: result.error }, { status: 401 })
     }
+
+    // Get user profile from Firestore
+    const profileResult = await userProfile.getProfile(result.user!.uid)
+    const userName = profileResult.data?.name || email.split('@')[0]
+
+    // Set session cookie
     const jar = await cookies()
-    jar.set("session", JSON.stringify({ name: user.name, email: user.email }), {
+    jar.set("session", JSON.stringify({ 
+      uid: result.user!.uid,
+      name: userName, 
+      email 
+    }), {
       httpOnly: true,
       path: "/",
-      maxAge: 60 * 60 * 24 * 7,
+      maxAge: 60 * 60 * 24 * 7, // 7 days
       sameSite: "lax",
     })
-    return NextResponse.json({ user: { name: user.name, email: user.email } })
+
+    return NextResponse.json({ 
+      user: { 
+        uid: result.user!.uid,
+        name: userName, 
+        email 
+      } 
+    })
   }
 
   if (action === "logout") {
+    // Sign out from Firebase
+    await firebaseAuth.logout()
+    
+    // Delete session cookie
     const jar = await cookies()
     jar.delete("session")
+    
     return NextResponse.json({ ok: true })
   }
 
@@ -54,15 +125,17 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET() {
-  const jar = await cookies()
-  const session = jar.get("session")
-  if (!session?.value) {
+  const userData = await getCurrentUserFromSession()
+  
+  if (!userData) {
     return NextResponse.json({ user: null })
   }
-  try {
-    const user = JSON.parse(session.value)
-    return NextResponse.json({ user })
-  } catch {
-    return NextResponse.json({ user: null })
-  }
+
+  return NextResponse.json({ 
+    user: { 
+      uid: userData.uid,
+      name: userData.name, 
+      email: userData.email 
+    } 
+  })
 }

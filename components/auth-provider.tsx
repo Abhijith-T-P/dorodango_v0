@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
 
 interface User {
+  uid?: string
   name: string
   email: string
 }
@@ -25,6 +26,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fetch("/api/auth")
       .then((r) => r.json())
       .then((data) => setUser(data.user))
+      .catch(() => setUser(null))
       .finally(() => setLoading(false))
   }, [])
 
