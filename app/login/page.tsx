@@ -62,17 +62,26 @@ export default function LoginPage() {
     setError("")
     setLoading(true)
 
-    const result = isSignUp
-      ? await signup(name, email, password)
-      : await login(email, password)
+    try {
+      const result = isSignUp
+        ? await signup(name, email, password)
+        : await login(email, password)
 
-    setLoading(false)
-    if (result.error) {
-      setError(result.error)
-    } else {
-      router.push("/products")
+      if (result.error) {
+        setError(result.error)
+      } else {
+        router.push("/products")
+      }
+    } catch (err) {
+      console.error("Auth error:", err)
+      setError("An unexpected error occurred. Please try again.")
+    } finally {
+      setLoading(false)
     }
   }
+
+
+
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
