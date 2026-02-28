@@ -1,9 +1,9 @@
-"use client"
+  "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { Leaf, ArrowLeft, ShoppingCart, Plus, Trash2, X, Loader2, LogOut, ShoppingBag, Check } from "lucide-react"
+import { Leaf, ArrowLeft, ShoppingCart, Plus, Trash2, X, Loader2, LogOut, ShoppingBag, Check, Upload, Image as ImageIcon } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
 import { useCart } from "@/components/cart-provider"
 
@@ -13,9 +13,13 @@ interface Product {
   artisan: string
   price: number
   image: string
+  images: string[]
   tag: string | null
   description: string
 }
+
+const MAX_IMAGES = 4
+const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB in bytes
 
 export default function ProductsPage() {
   const { user, logout } = useAuth()
@@ -25,6 +29,10 @@ export default function ProductsPage() {
   const [showAddForm, setShowAddForm] = useState(false)
   const [formLoading, setFormLoading] = useState(false)
   const [addedIds, setAddedIds] = useState<Set<number>>(new Set())
+  const [selectedImages, setSelectedImages] = useState<File[]>([])
+  const [imagePreviews, setImagePreviews] = useState<string[]>([])
+  const [imageError, setImageError] = useState<string>("")
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const fetchProducts = useCallback(async () => {
     const res = await fetch("/api/products")
@@ -37,11 +45,91 @@ export default function ProductsPage() {
     fetchProducts()
   }, [fetchProducts])
 
+  // Clean up preview URLs on unmount
+  useEffect(() => {
+    return () => {
+      imagePreviews.forEach((url) => {
+        if (url.startsWith("blob:")) {
+          URL.revokeObjectURL(url)
+        }
+      })
+    }
+  }, [])
+
+  function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || [])
+    setImageError("")
+
+    if (selectedImages.length + files.length > MAX_IMAGES) {
+      setImageError(`Maximum ${MAX_IMAGES} images allowed`)
+      return
+    }
+
+    const validFiles: File[] = []
+    let sizeError = false
+
+    for (const file of files) {
+      if (file.size > MAX_FILE_SIZE) {
+        sizeError = true
+        continue
+      }
+      if (!file.type.startsWith("image/")) {
+        continue
+      }
+      validFiles.push(file)
+    }
+
+    if (sizeError) {
+      setImageError("Some files exceeded 5MB limit and were skipped")
+    }
+
+    const newFiles = [...selectedImages, ...validFiles].slice(0, MAX_IMAGES)
+    setSelectedImages(newFiles)
+
+    // Create preview URLs
+    const newPreviews = newFiles.map((file) => URL.createObjectURL(file))
+    setImagePreviews(newPreviews)
+
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
+    }
+  }
+
+  function handleRemoveImage(index: number) {
+    const newFiles = selectedImages.filter((_, i) => i !== index)
+    const newPreviews = imagePreviews.filter((_, i) => i !== index)
+    
+    // Revoke the removed URL to avoid memory leaks
+    if (imagePreviews[index].startsWith("blob:")) {
+      URL.revokeObjectURL(imagePreviews[index])
+    }
+    
+    setSelectedImages(newFiles)
+    setImagePreviews(newPreviews)
+  }
+
   async function handleAddProduct(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setFormLoading(true)
+    setImageError("")
+
     const form = e.currentTarget
     const formData = new FormData(form)
+
+    // Convert images to base64 data URLs
+    const imagePromises = selectedImages.map((file) => {
+      return new Promise<string>((resolve) => {
+        const reader = new FileReader()
+        reader.onloadend = () => {
+          resolve(reader.result as string)
+        }
+        reader.readAsDataURL(file)
+      })
+    })
+
+    const images = await Promise.all(imagePromises)
+
     const res = await fetch("/api/products", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -51,13 +139,18 @@ export default function ProductsPage() {
         price: Number(formData.get("price")),
         description: formData.get("description"),
         tag: formData.get("tag") || null,
+        images: images,
       }),
     })
+
     if (res.ok) {
       form.reset()
       setShowAddForm(false)
+      setSelectedImages([])
+      setImagePreviews([])
       await fetchProducts()
     }
+
     setFormLoading(false)
   }
 
@@ -208,6 +301,72 @@ export default function ProductsPage() {
                 className="rounded-lg border border-input bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
+            
+            {/* Image Upload Section */}
+            <div className="flex flex-col gap-1.5 sm:col-span-2">
+              <label className="text-sm font-medium text-foreground">
+                Product Images (max {MAX_IMAGES}, 5MB each)
+              </label>
+              
+              {/* Image Preview Grid */}
+              {imagePreviews.length > 0 && (
+                <div className="mt-2 grid grid-cols-4 gap-3">
+                  {imagePreviews.map((preview, index) => (
+                    <div key={index} className="relative aspect-square rounded-lg overflow-hidden border border-border">
+                      <Image
+                        src={preview}
+                        alt={`Preview ${index + 1}`}
+                        fill
+                        className="object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveImage(index)}
+                        className="absolute top-1 right-1 rounded-full bg-background/80 p-1 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {/* Upload Button */}
+              {selectedImages.length < MAX_IMAGES && (
+                <div 
+                  className="mt-3 flex cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-border p-6 transition-colors hover:border-accent hover:bg-accent/5"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <div className="flex flex-col items-center gap-2 text-center">
+                    <Upload className="h-8 w-8 text-muted-foreground" />
+                    <div className="text-sm text-muted-foreground">
+                      <span className="font-medium text-accent">Click to upload</span> or drag and drop
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      PNG, JPG, GIF up to 5MB
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleImageSelect}
+                className="hidden"
+              />
+              
+              {imageError && (
+                <p className="mt-2 text-sm text-destructive">{imageError}</p>
+              )}
+              
+              <p className="mt-1 text-xs text-muted-foreground">
+                {selectedImages.length}/{MAX_IMAGES} images selected
+              </p>
+            </div>
+
             <div className="flex flex-col gap-1.5 sm:col-span-2">
               <label htmlFor="prod-desc" className="text-sm font-medium text-foreground">Description</label>
               <textarea
@@ -261,6 +420,13 @@ export default function ProductsPage() {
                     <span className="absolute top-4 left-4 rounded-full bg-accent px-3 py-1 text-xs font-medium text-accent-foreground">
                       {product.tag}
                     </span>
+                  )}
+                  {/* Show image count indicator if multiple images */}
+                  {product.images && product.images.length > 1 && (
+                    <div className="absolute bottom-4 right-4 flex items-center gap-1 rounded-full bg-background/80 px-2 py-1 text-xs font-medium text-foreground backdrop-blur-sm">
+                      <ImageIcon className="h-3 w-3" />
+                      {product.images.length}
+                    </div>
                   )}
                 </div>
                 <div className="flex flex-1 flex-col gap-2 p-5">

@@ -7,6 +7,7 @@ export interface Product {
   artisan: string
   price: number
   image: string
+  images: string[]
   tag: string | null
   description: string
 }
@@ -20,6 +21,7 @@ const products: Product[] = [
     artisan: "Meera Devi",
     price: 2499,
     image: "/images/product-1.jpg",
+    images: ["/images/product-1.jpg"],
     tag: "Best Seller",
     description: "Hand-embroidered floral motifs on upcycled denim. One of a kind.",
   },
@@ -29,6 +31,7 @@ const products: Product[] = [
     artisan: "Priya Sharma",
     price: 899,
     image: "/images/product-2.jpg",
+    images: ["/images/product-2.jpg"],
     tag: "New",
     description: "Hand-painted botanical art on repurposed canvas. Carry your story.",
   },
@@ -38,6 +41,7 @@ const products: Product[] = [
     artisan: "Fatima Begum",
     price: 1899,
     image: "/images/product-3.jpg",
+    images: ["/images/product-3.jpg"],
     tag: "Limited",
     description: "Vintage fabric scraps stitched into a warm, wearable mosaic.",
   },
@@ -47,6 +51,7 @@ const products: Product[] = [
     artisan: "Lakshmi Iyer",
     price: 1999,
     image: "/images/product-4.jpg",
+    images: ["/images/product-4.jpg"],
     tag: null,
     description: "Floral and butterfly embroidery breathing new life into classic denim.",
   },
@@ -56,6 +61,7 @@ const products: Product[] = [
     artisan: "Anjali Patel",
     price: 599,
     image: "/images/product-5.jpg",
+    images: ["/images/product-5.jpg"],
     tag: "New",
     description: "Repurposed vintage silk with hand-stitched beadwork detailing.",
   },
@@ -65,6 +71,7 @@ const products: Product[] = [
     artisan: "Ravi Kumar",
     price: 1299,
     image: "/images/product-6.jpg",
+    images: ["/images/product-6.jpg"],
     tag: null,
     description: "Traditional block printing technique on sustainably sourced cotton.",
   },
@@ -92,18 +99,22 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json()
-  const { name, artisan, price, description, tag } = body
+  const { name, artisan, price, description, tag, images } = body
 
   if (!name || !artisan || !price || !description) {
     return NextResponse.json({ error: "All fields are required" }, { status: 400 })
   }
 
+  // Validate images array - max 4 images
+  const imageArray = Array.isArray(images) ? images.slice(0, 4) : []
+  
   const product: Product = {
     id: nextId++,
     name,
     artisan,
     price: Number(price),
-    image: "/images/product-1.jpg",
+    image: imageArray[0] || "/images/product-1.jpg",
+    images: imageArray,
     tag: tag || null,
     description,
   }
