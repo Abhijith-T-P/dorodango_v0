@@ -30,54 +30,7 @@ const STORAGE_KEY = "dorodango-products"
 const MIGRATION_KEY = "dorodango-migration-complete"
 
 const defaultProducts: Omit<Product, "id">[] = [
-  {
-    name: "Embroidered Denim Jacket",
-    artisan: "Meera Devi",
-    price: 2499,
-    image: "/images/product-1.jpg",
-    tag: "Best Seller",
-    description: "Hand-embroidered floral motifs on upcycled denim. One of a kind.",
-  },
-  {
-    name: "Botanical Canvas Tote",
-    artisan: "Priya Sharma",
-    price: 899,
-    image: "/images/product-2.jpg",
-    tag: "New",
-    description: "Hand-painted botanical art on repurposed canvas. Carry your story.",
-  },
-  {
-    name: "Patchwork Quilted Vest",
-    artisan: "Fatima Begum",
-    price: 1899,
-    image: "/images/product-3.jpg",
-    tag: "Limited",
-    description: "Vintage fabric scraps stitched into a warm, wearable mosaic.",
-  },
-  {
-    name: "Embroidered Jeans",
-    artisan: "Lakshmi Iyer",
-    price: 1999,
-    image: "/images/product-4.jpg",
-    tag: null,
-    description: "Floral and butterfly embroidery breathing new life into classic denim.",
-  },
-  {
-    name: "Silk Beaded Headband",
-    artisan: "Anjali Patel",
-    price: 599,
-    image: "/images/product-5.jpg",
-    tag: "New",
-    description: "Repurposed vintage silk with hand-stitched beadwork detailing.",
-  },
-  {
-    name: "Block-Printed Cotton Tee",
-    artisan: "Ravi Kumar",
-    price: 1299,
-    image: "/images/product-6.jpg",
-    tag: null,
-    description: "Traditional block printing technique on sustainably sourced cotton.",
-  },
+  
 ]
 
 export function ProductsProvider({ children }: { children: ReactNode }) {

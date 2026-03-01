@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
+import { db } from "@/lib/firebase"
+import { collection, getDocs, addDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore"
 
 export interface Product {
-  id: number
+  id: string
   name: string
   artisan: string
   price: number
@@ -11,71 +13,6 @@ export interface Product {
   tag: string | null
   description: string
 }
-
-let nextId = 7
-
-const products: Product[] = [
-  {
-    id: 1,
-    name: "Embroidered Denim Jacket",
-    artisan: "Meera Devi",
-    price: 2499,
-    image: "/images/product-1.jpg",
-    images: ["/images/product-1.jpg"],
-    tag: "Best Seller",
-    description: "Hand-embroidered floral motifs on upcycled denim. One of a kind.",
-  },
-  {
-    id: 2,
-    name: "Botanical Canvas Tote",
-    artisan: "Priya Sharma",
-    price: 899,
-    image: "/images/product-2.jpg",
-    images: ["/images/product-2.jpg"],
-    tag: "New",
-    description: "Hand-painted botanical art on repurposed canvas. Carry your story.",
-  },
-  {
-    id: 3,
-    name: "Patchwork Quilted Vest",
-    artisan: "Fatima Begum",
-    price: 1899,
-    image: "/images/product-3.jpg",
-    images: ["/images/product-3.jpg"],
-    tag: "Limited",
-    description: "Vintage fabric scraps stitched into a warm, wearable mosaic.",
-  },
-  {
-    id: 4,
-    name: "Embroidered Jeans",
-    artisan: "Lakshmi Iyer",
-    price: 1999,
-    image: "/images/product-4.jpg",
-    images: ["/images/product-4.jpg"],
-    tag: null,
-    description: "Floral and butterfly embroidery breathing new life into classic denim.",
-  },
-  {
-    id: 5,
-    name: "Silk Beaded Headband",
-    artisan: "Anjali Patel",
-    price: 599,
-    image: "/images/product-5.jpg",
-    images: ["/images/product-5.jpg"],
-    tag: "New",
-    description: "Repurposed vintage silk with hand-stitched beadwork detailing.",
-  },
-  {
-    id: 6,
-    name: "Block-Printed Cotton Tee",
-    artisan: "Ravi Kumar",
-    price: 1299,
-    image: "/images/product-6.jpg",
-    images: ["/images/product-6.jpg"],
-    tag: null,
-    description: "Traditional block printing technique on sustainably sourced cotton.",
-  },
-]
 
 function getUser(jar: Awaited<ReturnType<typeof cookies>>) {
   const session = jar.get("session")
@@ -88,7 +25,29 @@ function getUser(jar: Awaited<ReturnType<typeof cookies>>) {
 }
 
 export async function GET() {
-  return NextResponse.json({ products })
+  try {
+    const productsRef = collection(db, 'products')
+    const snapshot = await getDocs(productsRef)
+    
+    const products: Product[] = snapshot.docs.map(doc => {
+      const data = doc.data()
+      return {
+        id: doc.id,
+        name: data.name as string,
+        artisan: data.artisan as string,
+        price: data.price as number,
+        image: data.image as string,
+        images: data.images as string[] || [],
+        tag: data.tag as string | null,
+        description: data.description as string,
+      }
+    })
+    
+    return NextResponse.json({ products })
+  } catch (error) {
+    console.error('Error fetching products from Firebase:', error)
+    return NextResponse.json({ error: 'Failed to fetch products' }, { status: 500 })
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -98,28 +57,45 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Sign in required" }, { status: 401 })
   }
 
-  const body = await req.json()
-  const { name, artisan, price, description, tag, images } = body
+  try {
+    const body = await req.json()
+    const { name, artisan, price, description, tag, images } = body
 
-  if (!name || !artisan || !price || !description) {
-    return NextResponse.json({ error: "All fields are required" }, { status: 400 })
-  }
+    if (!name || !artisan || !price || !description) {
+      return NextResponse.json({ error: "All fields are required" }, { status: 400 })
+    }
 
-  // Validate images array - max 4 images
-  const imageArray = Array.isArray(images) ? images.slice(0, 4) : []
-  
-  const product: Product = {
-    id: nextId++,
-    name,
-    artisan,
-    price: Number(price),
-    image: imageArray[0] || "/images/product-1.jpg",
-    images: imageArray,
-    tag: tag || null,
-    description,
+    // Validate images array - max 4 images
+    const imageArray = Array.isArray(images) ? images.slice(0, 4) : []
+    
+    const productsRef = collection(db, 'products')
+    const docRef = await addDoc(productsRef, {
+      name,
+      artisan,
+      price: Number(price),
+      image: imageArray[0] || "/images/product-1.jpg",
+      images: imageArray,
+      tag: tag || null,
+      description,
+      createdAt: serverTimestamp()
+    })
+    
+    const product: Product = {
+      id: docRef.id,
+      name,
+      artisan,
+      price: Number(price),
+      image: imageArray[0] || "/images/product-1.jpg",
+      images: imageArray,
+      tag: tag || null,
+      description,
+    }
+    
+    return NextResponse.json({ product })
+  } catch (error) {
+    console.error('Error adding product to Firebase:', error)
+    return NextResponse.json({ error: 'Failed to add product' }, { status: 500 })
   }
-  products.push(product)
-  return NextResponse.json({ product })
 }
 
 export async function DELETE(req: NextRequest) {
@@ -129,12 +105,18 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "Sign in required" }, { status: 401 })
   }
 
-  const { searchParams } = new URL(req.url)
-  const id = Number(searchParams.get("id"))
-  const idx = products.findIndex((p) => p.id === id)
-  if (idx === -1) {
-    return NextResponse.json({ error: "Product not found" }, { status: 404 })
+  try {
+    const { searchParams } = new URL(req.url)
+    const id = searchParams.get("id")
+    
+    if (!id) {
+      return NextResponse.json({ error: "Product ID is required" }, { status: 400 })
+    }
+    
+    await deleteDoc(doc(db, 'products', id))
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    console.error('Error deleting product from Firebase:', error)
+    return NextResponse.json({ error: 'Failed to delete product' }, { status: 500 })
   }
-  products.splice(idx, 1)
-  return NextResponse.json({ ok: true })
 }

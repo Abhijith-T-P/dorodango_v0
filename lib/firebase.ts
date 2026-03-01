@@ -5,6 +5,9 @@ import {
   signInWithEmailAndPassword, 
   signOut as firebaseSignOut,
   onAuthStateChanged,
+  setPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence,
   type User as FirebaseUser
 } from "firebase/auth"
 import { 
@@ -57,8 +60,16 @@ if (typeof window !== 'undefined') {
   })
 }
 
-// Initialize Auth
+// Initialize Auth with local persistence (persists across page refreshes)
 export const auth = getAuth(app)
+
+// Set auth persistence to local - this ensures Firebase remembers the user
+// even after page refresh/browser restart
+if (typeof window !== 'undefined') {
+  setPersistence(auth, browserLocalPersistence).catch((err) => {
+    console.warn('Failed to set auth persistence:', err)
+  })
+}
 
 // Export db for use in other files
 export { db }

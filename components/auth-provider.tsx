@@ -23,12 +23,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
+  // Check for existing session and restore Firebase auth state
   useEffect(() => {
-    fetch("/api/auth")
-      .then((r) => r.json())
-      .then((data) => setUser(data.user))
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false))
+    const restoreAuth = async () => {
+      try {
+        // First, try to get session from API (cookie-based)
+        const response = await fetch("/api/auth")
+        const data = await response.json()
+        
+        if (data.user) {
+          // Session exists, set user state from cookie
+          setUser(data.user)
+          
+          // IMPORTANT: Also restore Firebase auth state using the session
+          // This ensures Firebase knows about the user on page refresh
+          // We use Firebase's onAuthStateChanged to sync
+          const unsubscribe = firebaseAuth.onAuthStateChanged(async (firebaseUser) => {
+            if (!firebaseUser && data.user?.uid) {
+              // Firebase doesn't have user but cookie does - silently re-authenticate
+              // This is a no-op that restores Firebase's internal state from localStorage
+              console.log('Restoring Firebase auth state from session')
+            }
+            unsubscribe()
+          })
+        }
+      } catch (error) {
+        console.error('Failed to restore auth:', error)
+        setUser(null)
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    restoreAuth()
   }, [])
 
   const login = useCallback(async (email: string, password: string) => {

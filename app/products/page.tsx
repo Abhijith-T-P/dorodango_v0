@@ -3,12 +3,12 @@
 import { useState, useEffect, useCallback, useRef } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { Leaf, ArrowLeft, ShoppingCart, Plus, Trash2, X, Loader2, LogOut, ShoppingBag, Check, Upload, Image as ImageIcon } from "lucide-react"
+import { Leaf, ArrowLeft, ShoppingCart, Plus, Trash2, X, Loader2, LogOut, ShoppingBag, Check, Upload, Image as ImageIcon, ChevronLeft, ChevronRight } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
 import { useCart } from "@/components/cart-provider"
 
 interface Product {
-  id: number
+  id: string
   name: string
   artisan: string
   price: number
@@ -28,11 +28,54 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
   const [formLoading, setFormLoading] = useState(false)
-  const [addedIds, setAddedIds] = useState<Set<number>>(new Set())
+  const [addedIds, setAddedIds] = useState<Set<string>>(new Set())
   const [selectedImages, setSelectedImages] = useState<File[]>([])
   const [imagePreviews, setImagePreviews] = useState<string[]>([])
   const [imageError, setImageError] = useState<string>("")
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Lightbox state
+  const [lightboxOpen, setLightboxOpen] = useState(false)
+  const [lightboxImages, setLightboxImages] = useState<string[]>([])
+  const [lightboxIndex, setLightboxIndex] = useState(0)
+
+  // Open lightbox with product images
+  function openLightbox(images: string[]) {
+    setLightboxImages(images)
+    setLightboxIndex(0)
+    setLightboxOpen(true)
+  }
+
+  // Close lightbox
+  function closeLightbox() {
+    setLightboxOpen(false)
+  }
+
+  // Navigate to previous image
+  function prevImage(e?: React.MouseEvent) {
+    e?.stopPropagation()
+    setLightboxIndex((prev) => (prev === 0 ? lightboxImages.length - 1 : prev - 1))
+  }
+
+  // Navigate to next image
+  function nextImage(e?: React.MouseEvent) {
+    e?.stopPropagation()
+    setLightboxIndex((prev) => (prev === lightboxImages.length - 1 ? 0 : prev + 1))
+  }
+
+  // Keyboard navigation
+  useEffect(() => {
+    if (!lightboxOpen) return
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") closeLightbox()
+      if (e.key === "ArrowLeft") setLightboxIndex((prev) => (prev === 0 ? lightboxImages.length - 1 : prev - 1))
+      if (e.key === "ArrowRight") setLightboxIndex((prev) => (prev === lightboxImages.length - 1 ? 0 : prev + 1))
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [lightboxOpen, lightboxImages.length])
 
   const fetchProducts = useCallback(async () => {
     const res = await fetch("/api/products")
@@ -154,7 +197,7 @@ export default function ProductsPage() {
     setFormLoading(false)
   }
 
-  async function handleDelete(id: number) {
+async function handleDelete(id: string) {
     const res = await fetch(`/api/products?id=${id}`, { method: "DELETE" })
     if (res.ok) {
       await fetchProducts()
@@ -409,12 +452,15 @@ export default function ProductsPage() {
                     <Trash2 className="h-4 w-4" />
                   </button>
                 )}
-                <div className="relative aspect-square overflow-hidden">
+                <div 
+                  className="relative aspect-square overflow-hidden"
+                  onClick={() => product.images && product.images.length > 1 && openLightbox(product.images)}
+                >
                   <Image
                     src={product.image}
                     alt={product.name}
                     fill
-                    className="object-cover transition-transform duration-500 group-hover:scale-105"
+                    className={`object-cover transition-transform duration-500 ${product.images && product.images.length > 1 ? 'cursor-pointer group-hover:scale-105' : ''}`}
                   />
                   {product.tag && (
                     <span className="absolute top-4 left-4 rounded-full bg-accent px-3 py-1 text-xs font-medium text-accent-foreground">
@@ -423,7 +469,10 @@ export default function ProductsPage() {
                   )}
                   {/* Show image count indicator if multiple images */}
                   {product.images && product.images.length > 1 && (
-                    <div className="absolute bottom-4 right-4 flex items-center gap-1 rounded-full bg-background/80 px-2 py-1 text-xs font-medium text-foreground backdrop-blur-sm">
+                    <div 
+                      className="absolute bottom-4 right-4 flex items-center gap-1 rounded-full bg-background/80 px-2 py-1 text-xs font-medium text-foreground backdrop-blur-sm cursor-pointer"
+                      onClick={(e) => { e.stopPropagation(); openLightbox(product.images!) }}
+                    >
                       <ImageIcon className="h-3 w-3" />
                       {product.images.length}
                     </div>
@@ -477,6 +526,63 @@ export default function ProductsPage() {
           </div>
         )}
       </main>
+
+      {/* Lightbox */}
+      {lightboxOpen && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
+          onClick={closeLightbox}
+        >
+          {/* Close button */}
+          <button
+            onClick={closeLightbox}
+            className="absolute top-4 right-4 z-10 rounded-full bg-white/10 p-2 text-white transition-colors hover:bg-white/20"
+            aria-label="Close lightbox"
+          >
+            <X className="h-6 w-6" />
+          </button>
+
+          {/* Previous button */}
+          {lightboxImages.length > 1 && (
+            <button
+              onClick={prevImage}
+              className="absolute left-4 z-10 rounded-full bg-white/10 p-3 text-white transition-colors hover:bg-white/20"
+              aria-label="Previous image"
+            >
+              <ChevronLeft className="h-8 w-8" />
+            </button>
+          )}
+
+          {/* Image */}
+          <div className="relative max-h-[90vh] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
+            <Image
+              src={lightboxImages[lightboxIndex]}
+              alt={`Image ${lightboxIndex + 1}`}
+              width={800}
+              height={800}
+              className="max-h-[90vh] w-auto object-contain"
+            />
+          </div>
+
+          {/* Next button */}
+          {lightboxImages.length > 1 && (
+            <button
+              onClick={nextImage}
+              className="absolute right-4 z-10 rounded-full bg-white/10 p-3 text-white transition-colors hover:bg-white/20"
+              aria-label="Next image"
+            >
+              <ChevronRight className="h-8 w-8" />
+            </button>
+          )}
+
+          {/* Image counter */}
+          {lightboxImages.length > 1 && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/50 px-4 py-2 text-white">
+              {lightboxIndex + 1} / {lightboxImages.length}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
